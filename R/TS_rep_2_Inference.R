@@ -8,14 +8,14 @@ set.seed(123)
 
 
 # global params
-topoName <- "CTS"
+topoName <- "TS_rep_2"
 forceSim <- FALSE     
 forcePCA <- FALSE
 forceSTICCC <- FALSE
 saveNetworkPlot <- FALSE
 nSamples <- 10000
 pseudocount <- T
-numClusters <- 4
+numClusters <- 2
 
 # directory setup
 topoDir <- file.path(getwd(),topoName)
@@ -61,45 +61,42 @@ if(pseudocount) {
 
 # create SCE object
 ## TODO: make the lines below into a small wrapper method createVIC()
-stic <- sticSE(topo = topo, exprMat = exprMat, normData = exprMat_norm,
-             topoName = topoName, expName = paste0(topoName, "_2024"))
-
-
-# add metadata
-stic <- prepMetadata(stic, exprMat_norm, cluster = T, k = numClusters)
-
-
-# Plot network
-if(saveNetworkPlot) {
-  plotNetwork(stic)  
-}
-
-
-# run PCA
-stic <- runPCA(stic, save=T, overwrite=forcePCA)
-
-### sanity check
-# pcadf <- reducedDim(stic,"PCA")
-# ggplot(data=pcadf, aes(x=PC1,y=PC2)) +
-#   geom_point()
-
-# compute grid based on PCA
-stic <- computeGrid(stic)
-
-# compute pairwise distance between points
-stic <- computeDist(stic)
-
-
-
-# compute trajectories
 stic_fname <- file.path(outputDir, paste0("stic_",topoName,".Rds"))
 if(!file.exists(stic_fname) | forceSTICCC) {
+
+  stic <- sticSE(topo = topo, exprMat = exprMat, normData = exprMat_norm,
+                topoName = topoName, expName = paste0(topoName, "_2024"))
+  
+  
+  # add metadata
+  stic <- prepMetadata(stic, exprMat_norm, cluster = T, k = numClusters)
+  
+  
+  # Plot network
+  if(saveNetworkPlot) {
+    plotNetwork(stic)  
+  }
+  
+  # run PCA
+  stic <- runPCA(stic, save=T, overwrite=forcePCA)
+  
+  ### sanity check
+  # pcadf <- reducedDim(stic,"PCA")
+  # ggplot(data=pcadf, aes(x=PC1,y=PC2)) +
+  #   geom_point()
+  
+  # compute grid based on PCA
+  stic <- computeGrid(stic)
+  
+  # compute pairwise distance between points
+  stic <- computeDist(stic)
+  
+  # compute trajectories
   stic <- runSTICCC(stic, v2=T, invertV2=T)
   saveRDS(stic, stic_fname)
 } else {
   stic <- readRDS(stic_fname)
 }
-
 
 # invert v2 for interpretability
 # Multiply in vectors by -1
@@ -108,7 +105,7 @@ if(!file.exists(stic_fname) | forceSTICCC) {
 
 # Plot results
 minMagnitude <- 0.001
-scalingFactor <- 2
+scalingFactor <- 1
 arrowheadSize <- 0.5
 
 
@@ -126,7 +123,7 @@ plotGrid(sce = stic,
          minMagnitude = minMagnitude,
          scalingFactor = scalingFactor,
          arrowheadSize = arrowheadSize
-         )
+)
 
 
 # Plot v2
@@ -177,16 +174,13 @@ plotGrid(sce = stic,
 stic <- computeGridVectors(stic, inVectors = F, combine = F, unitVectors = F)
 
 plotGrid(sce = stic,
-         colorVar = "Cluster",
+         colorVar = NA,
          plotLoadings = T,
          plotSuffix = paste0("_jul24_v1_loadings_grey"),
          minMagnitude = minMagnitude,
          scalingFactor = scalingFactor,
          arrowheadSize = arrowheadSize
 )
-
-
-
 
 
 

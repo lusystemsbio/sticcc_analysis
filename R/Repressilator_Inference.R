@@ -8,14 +8,14 @@ set.seed(123)
 
 
 # global params
-topoName <- "CTS"
+topoName <- "repressilator"
 forceSim <- FALSE     
 forcePCA <- FALSE
 forceSTICCC <- FALSE
 saveNetworkPlot <- FALSE
 nSamples <- 10000
 pseudocount <- T
-numClusters <- 4
+numClusters <- 6
 
 # directory setup
 topoDir <- file.path(getwd(),topoName)
@@ -62,7 +62,7 @@ if(pseudocount) {
 # create SCE object
 ## TODO: make the lines below into a small wrapper method createVIC()
 stic <- sticSE(topo = topo, exprMat = exprMat, normData = exprMat_norm,
-             topoName = topoName, expName = paste0(topoName, "_2024"))
+              topoName = topoName, expName = paste0(topoName, "_2024"))
 
 
 # add metadata
@@ -100,7 +100,6 @@ if(!file.exists(stic_fname) | forceSTICCC) {
   stic <- readRDS(stic_fname)
 }
 
-
 # invert v2 for interpretability
 # Multiply in vectors by -1
 #colData(stic)$dX_in <- -1 * colData(stic)$dX_in
@@ -108,7 +107,7 @@ if(!file.exists(stic_fname) | forceSTICCC) {
 
 # Plot results
 minMagnitude <- 0.001
-scalingFactor <- 2
+scalingFactor <- 1
 arrowheadSize <- 0.5
 
 
@@ -126,7 +125,7 @@ plotGrid(sce = stic,
          minMagnitude = minMagnitude,
          scalingFactor = scalingFactor,
          arrowheadSize = arrowheadSize
-         )
+)
 
 
 # Plot v2
@@ -177,7 +176,7 @@ plotGrid(sce = stic,
 stic <- computeGridVectors(stic, inVectors = F, combine = F, unitVectors = F)
 
 plotGrid(sce = stic,
-         colorVar = "Cluster",
+         colorVar = NA,
          plotLoadings = T,
          plotSuffix = paste0("_jul24_v1_loadings_grey"),
          minMagnitude = minMagnitude,
