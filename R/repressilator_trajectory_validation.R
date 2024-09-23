@@ -404,6 +404,17 @@ for(pt in unique(var_traj_df$QueryPoint)) {
 
 #plot(optimal_lags$QueryPoint, optimal_lags$OptimalLag)
 
+
+ggplot(var_traj_df[which(var_traj_df$Lag < 2),]) +
+  geom_point(aes(x=Lag, y=RMSD, color=QueryPoint), size=3) +
+  geom_line(aes(x=Lag, y=RMSD, color=QueryPoint)) +
+  theme_sticcc() +
+  geom_hline(aes(yintercept=target_rmsd), color="red", lty="dashed", size=2) +
+  theme(axis.line = element_line(linewidth = 0.7, colour = "black"))
+
+
+
+
 #debug(v_obs_along_path)
 rs_list <- v_obs_along_path(trajectory = traj_pca, # PCA plus Time column
                             lag = optimal_lags$OptimalLag, # numeric - time gap (computed numerically, so should correspond to times, not indices!)
@@ -552,21 +563,36 @@ image <- plot_v_vs_trajectory(sce = stic,
                               lag = 0.5,
                               v_pred = traj_v_pred[8,], 
                               scale_factor = 0.2)
-image
+image + theme_sticcc() + theme(axis.line = element_line(linewidth = 0.7, colour = "black"))
 
 
 
 image <- ggplot() +
   #geom_point(data=pca$x, aes(x=PC1, y=PC2)) +
   geom_density2d(data=traj_pca[vector_subset,], aes(x=PC1, y=PC2), color="red") +
-  geom_point(data=clust_431_traj, aes(x=PC1, y=PC2, color=1:60)) +
-  geom_segment(data = traj_v_pred_REV, 
-               aes(x=x,y=y, xend=x+dx*revScalingFactor, yend=y+dy*revScalingFactor), 
+  geom_point(data=traj_0noise_pca[which(traj_0noise_pca$Time %in% cycleTs),], aes(x=PC1, y=PC2, color=1:77)) +
+  geom_segment(data = traj_v_pred, 
+               aes(x=x,y=y, xend=x+dx*0.2, yend=y+dy*0.2), 
                arrow = arrow(length = unit(0.3,"cm")), color="black", size=2, alpha=0.7) +
   scale_color_gradient(name="Query Point", breaks=c(10,30,50)) +
   theme_sticcc() +
   theme(axis.line = element_line(linewidth = 0.7, colour = "black"))
+image
 
+
+
+## Extended data figure to show deterministic limit cycle and point indices
+image <- ggplot() +
+  #geom_point(data=pca$x, aes(x=PC1, y=PC2)) +
+  geom_density2d(data=traj_pca[vector_subset,], aes(x=PC1, y=PC2), color="blue") +
+  geom_point(data=traj_0noise_pca[which(traj_0noise_pca$Time %in% cycleTs),], aes(x=PC1, y=PC2, color=1:77)) +
+  #geom_segment(data = traj_v_pred, 
+  #             aes(x=x,y=y, xend=x+dx*0.2, yend=y+dy*0.2), 
+  #             arrow = arrow(length = unit(0.3,"cm")), color="black", size=2, alpha=0.7) +
+  scale_color_gradient(name="Query Point", breaks=c(10,30,50)) +
+  theme_sticcc() +
+  theme(axis.line = element_line(linewidth = 0.7, colour = "black"))
+image
 
 
 

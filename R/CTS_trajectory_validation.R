@@ -277,7 +277,9 @@ ggplot() +
   #geom_point(data=pca$x, aes(x=PC1, y=PC2)) +
   geom_density2d(data=traj_pca[vector_subset,], aes(x=PC1, y=PC2)) +
   geom_point(data=clust_431_traj, aes(x=PC1, y=PC2, color=1:60)) +
-  scale_color_gradient()
+  scale_color_gradient(name="Query Point") +
+  theme_sticcc() +
+  theme(axis.line = element_line(linewidth = 0.7, colour = "black"))
 
 
 
@@ -366,6 +368,15 @@ for(pt in unique(var_traj_df$QueryPoint)) {
 }
 
 #plot(optimal_lags$QueryPoint, optimal_lags$OptimalLag)
+
+ggplot(var_traj_df[which(var_traj_df$Lag < 10),]) +
+  geom_point(aes(x=Lag, y=RMSD, color=QueryPoint), size=3) +
+  geom_line(aes(x=Lag, y=RMSD, color=QueryPoint)) +
+  theme_sticcc() +
+  geom_hline(aes(yintercept=target_rmsd), color="red", lty="dashed", size=2) +
+  theme(axis.line = element_line(linewidth = 0.7, colour = "black"))
+
+
 
 
 rs_list <- v_obs_along_path(trajectory = traj_pca, # PCA plus Time column

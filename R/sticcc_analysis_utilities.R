@@ -522,3 +522,207 @@ plot_v_vs_trajectory <- function(sce,
 }
 
 
+plotObsVPred <- function(sce,
+                         model
+) {
+  
+  # Create sign vector
+  topo <- sce@metadata$topo
+  sign_vector <- revalue(factor(topo$Type), c('1'='1','2'='-1','3'='1','4'='-1','5'='1','6'='-1'), warn_missing = FALSE)
+  sign_vector <- as.numeric(levels(sign_vector))[sign_vector]
+  
+  # Compute sampling radius
+  sampling_radius <- sce@metadata$params$sample_radius * sce@metadata$max_dist
+  
+  # get posMat (position matrix - this should be either identical or closely correlated w/ the data used to compute dist_mat)
+  if(is.null(sce@metadata$params$nPCs)) {
+    nPCs <- nrow(sce)
+    sce@metadata$params$nPCs <- nPCs
+    
+  } else {
+    nPCs <- sce@metadata$params$nPCs
+  }
+  
+  # use first nPCs PCs as spatial coordinates unless genes are specified
+  pcaMat <- reducedDim(sce, "PCA")[colnames(sce),1:nPCs]
+  if(sce@metadata$params$useGenes) {
+    posMat <- as.data.frame(t(assay(sce, "normcounts")))[colnames(sce),]
+  } else {
+    posMat <- pcaMat
+  }
+  
+  
+  
+  posList <- colnames(posMat)
+  rownames(posMat) <- colnames(sce)
+  
+  # get exprMat (normalized expression matrix - high-dimensional data (rows=features, cols=samples))
+  exprMat <- assay(sce,"normcounts")
+  
+  # Begin velocity calculation
+  if(sce@metadata$params$verbose) {
+    print("Computing inferred velocity")
+  }
+  
+  sample_list <- colData(sce)$SampleID
+  colData(sce)$numNeighbors <- NA
+  colData(sce)$selfCor <- NA
+  colData(sce)$X <- NA
+  colData(sce)$Y <- NA
+  colData(sce)$dX <- NA
+  colData(sce)$dY <- NA
+  colData(sce)$fewNeighbors <- FALSE
+  colData(sce)$nonInvertible <- FALSE
+  colData(sce)$selfCorNA <- FALSE
+  
+  weighted_vector_list <- vector(mode = "list", length = length(sample_list))
+  
+  stepi <- 1
+  query_point <- model
+  
+  
+  
+  ## Get query point data
+  query_data <- posMat[query_point,]
+  colData(sce)[query_point,"X"] <- pcaMat[query_point,1]
+  colData(sce)[query_point,"Y"] <- pcaMat[query_point,2]
+  
+  ## Find neighbors
+  neighbors <- which(sce@metadata$dist_mat[query_point,colnames(sce)] <= sampling_radius)
+  dists <- sce@metadata$dist_mat[query_point,neighbors]
+  dists <- dists[which(names(dists) != query_point)]
+  #neighbors <- neighbors[which(neighbors %in% colnames(sce))]
+  
+  ## Skip sample if number of neighbors too small
+  if(length(neighbors) <= (sce@metadata$params$minNeighbors+1)) {
+    colData(sce)[query_point,"fewNeighbors"] <- TRUE
+    colData(sce)[query_point,"numNeighbors"] <- length(neighbors)-1
+    next
+  }
+  
+  ## Select neighbors
+  subset_models <- as.data.frame(posMat[neighbors,])
+  subset_models <- subset_models[-which(rownames(subset_models) %in% query_point),]
+  colData(sce)[query_point,"numNeighbors"] <- nrow(subset_models)
+  
+  ## Multiple regression
+  # Create relative positional matrix of neighbor samples
+  subset_models[,1:ncol(subset_models)] <- apply(subset_models[,1:ncol(subset_models)], 2, listToNumeric)
+  deriv_df <- sweep(subset_models, 2, as.numeric(query_data), "-")
+  
+  # get relative expression matrix & transpose (neighboring cells only)
+  geneex_mat <- as.matrix(deriv_df[,posList])
+  geneex_mat_transposed <- t(geneex_mat)
+  
+  # Multiply relative positional matrix by its transpose
+  mat_product <- geneex_mat_transposed %*% geneex_mat
+  
+  # Take the inverse if possible - if not, skip this sample
+  inverse_mat <- tryCatch({
+    solve(mat_product)
+  }, error = function(e) {
+    "non-invertible"
+  })
+  
+  if(inverse_mat[1] == "non-invertible") {
+    colData(sce)[query_point,"nonInvertible"] <- TRUE
+    next
+  }
+  
+  # Multiply the inverted matrix by the transposed positional matrix
+  x_mat <- inverse_mat %*% geneex_mat_transposed
+  
+  
+  ## Calculate delayed correlation
+  # Self correlation - skip this sample if NA
+  src_activity <- as.numeric(exprMat[topo$Source,query_point] * sign_vector)
+  self_target_activity <- as.numeric(exprMat[topo$Target,query_point]) 
+  self_cor <- cor(self_target_activity, src_activity)
+  if(is.na(self_cor)) {
+    colData(sce)[query_point,"selfCorNA"] <- TRUE
+    next
+  } 
+  colData(sce)[query_point,"selfCor"] <- self_cor
+  
+  # For each neighbor:
+  deriv_df$DelayedCorr <- NA
+  for(model in rownames(deriv_df)) {
+    # Correlate neighbor target activity with query source activity * sign_vector
+    neighbor_target_activity <- as.numeric(exprMat[topo$Target, model]) 
+    neighbor_cor <- cor(neighbor_target_activity,src_activity)
+    deriv_df[model,"DelayedCorr"] <- (neighbor_cor - self_cor)
+  }
+  
+  # Remove NA values caused by zero variance vectors
+  na_models <- which(is.na(deriv_df$DelayedCorr))
+  if(length(na_models) > 0) {
+    deriv_df <- deriv_df[-na_models,]
+    subset_models <- subset_models[-na_models,]
+    x_mat <- x_mat[,-na_models]
+  }
+  
+  
+  # Compute product of earlier matrix product and delayed corr vector
+  corr_vec <- as.matrix(deriv_df[,"DelayedCorr"])
+  b_vec <- x_mat %*% corr_vec
+  
+  ## Save vector to master list
+  saved_vector <- as.data.frame(t(b_vec))
+  colnames(saved_vector) <- paste0("d",posList)
+  weighted_vector_list[[stepi]] <- saved_vector
+  names(weighted_vector_list)[[stepi]] <- query_point
+  
+  ## Update colData - if all genes were used, convert to pcs for plotting
+  if(sce@metadata$params$useGenes) {
+    pca <- sce@metadata$pca_data
+    pcaVector <- scale(as.data.frame(t(b_vec)), pca$center, pca$scale) %*% pca$rotation
+    colData(sce)[query_point,"dX"] <- pcaVector[1]
+    colData(sce)[query_point,"dY"] <- pcaVector[2]
+  } else {
+    colData(sce)[query_point,"dX"] <- saved_vector[1]
+    colData(sce)[query_point,"dY"] <- saved_vector[2]
+  }
+  
+  
+  
+  # loop through neighbors again to compute regression accuracy
+  deriv_df$Err <- NA
+  deriv_df$Obs_CCC <- NA
+  deriv_df$Pred_CCC <- NA
+  deriv_df$Dist <- NA
+  for(model in rownames(deriv_df)) {
+    
+    rel_ccc <- deriv_df[model,"DelayedCorr"]
+    deriv_df[model,"Obs_CCC"] <- rel_ccc
+    pred_ccc <- as.numeric(deriv_df[model,c(1:length(posList))]) %*% as.numeric(b_vec[1:length(posList),])
+    deriv_df[model,"Pred_CCC"] <- pred_ccc
+    err <- (abs(rel_ccc - pred_ccc))^2
+    deriv_df[model,"Error"] <- err
+    
+    deriv_df[model,"Dist"] <- dists[model]
+  }
+  colname <- paste0("Error",sce@metadata$params$sample_radius)
+  colData(sce)[query_point,colname] <- median(deriv_df$Error, na.rm=T)
+  
+  for(gene in posList) {
+    colname <- paste0("beta_",gene)
+    colData(sce)[query_point,colname] <- b_vec[gene,]
+  }
+  
+  
+  #plot(deriv_df$Obs_CCC, deriv_df$Pred_CCC, col=deriv_df$Dist)
+  image <- ggplot(data=deriv_df, aes(x=Obs_CCC, y=Pred_CCC)) +
+    geom_point(aes(color=Dist), size=4) +
+    theme(axis.text = element_text(size=24), axis.title = element_text(size=24),
+          title = element_text(size=20)) 
+  print(image)
+  
+  
+}
+
+listToNumeric <- function(x) {
+  return(as.numeric(unname(unlist(x))))
+}
+
+
+

@@ -176,13 +176,16 @@ plotGrid(sce = stic,
 stic <- computeGridVectors(stic, inVectors = F, combine = F, unitVectors = F)
 
 plotGrid(sce = stic,
-         colorVar = NA,
+         colorVar = "Cluster",
          plotLoadings = T,
          plotSuffix = paste0("_jul24_v1_loadings_grey"),
          minMagnitude = minMagnitude,
          scalingFactor = scalingFactor,
          arrowheadSize = arrowheadSize
 )
+
+
+
 
 
 
