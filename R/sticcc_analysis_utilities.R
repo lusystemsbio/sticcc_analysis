@@ -150,7 +150,7 @@ v_obs_along_path <- function(trajectory, # PCA plus Time column
     
     
     # Leave padding around simulation start and end corresponding to max(lags)
-    rownames(trajectory) <- round(trajectory$Time, 1)
+    rownames(trajectory) <- round(trajectory$Time, 3)
     init_idx_padded <- neighbors[which(trajectory[neighbors,"Time"] > lag[i] & trajectory[neighbors,"Time"] < (max(trajectory$Time)-lag[i]))]
     init_states <- trajectory[init_idx_padded,]
     times <- init_states$Time
@@ -158,7 +158,7 @@ v_obs_along_path <- function(trajectory, # PCA plus Time column
     
     
     # Get final states
-    final_times <- round((times + lag[i]), 1)
+    final_times <- round((times + lag[i]), 3)
     final_states <- trajectory[as.character(final_times),]
     median_final_state <- colMedians(as.matrix(final_states), useNames = T)
     mean_final_state <- colMeans(as.matrix(final_states))
@@ -288,7 +288,7 @@ vobs_var_by_t <- function(trajectory, # PCA plus Time column
   
   
   # Leave padding around simulation start and end corresponding to max(lags)
-  rownames(trajectory) <- round(trajectory$Time, 1)
+  rownames(trajectory) <- round(trajectory$Time, 3)
   init_idx_padded <- neighbors[which(trajectory[neighbors,"Time"] > max(lags) & trajectory[neighbors,"Time"] < (max(trajectory$Time)-max(lags)))]
   init_states <- trajectory[init_idx_padded,]
   times <- init_states$Time
@@ -301,10 +301,13 @@ vobs_var_by_t <- function(trajectory, # PCA plus Time column
   
   # Iterate over lags
   for(lag in lags) {
+    nSteps <- lag / (trajectory$Time[2] - trajectory$Time[1])
     
     # Get final states
     final_times <- round((times + lag), 1)
-    final_states <- trajectory[as.character(final_times),]
+    final_indices <- init_idx_padded + nSteps
+    #final_states <- trajectory[as.character(final_times),]
+    final_states <- trajectory[final_indices,]
     
     # Var
     final_state_var <- sum(diag(var(final_states[,which(colnames(final_states) != "Time")])))

@@ -151,7 +151,7 @@ loadingDF$Y <- 0
 
 loadingFactor <- 3
 loadingLabelFactor <- loadingFactor + 0.5
-ggplot(data=traj_pca[which(traj_pca$Time > 9979),], aes(x=PC1,y=PC2, color=as.numeric(Time))) + 
+ggplot(data=traj_pca[which(traj_pca$Time > 979),], aes(x=PC1,y=PC2, color=as.numeric(Time))) + 
   geom_point(data=as.data.frame(pca$x), aes(x=PC1,y=PC2), color="grey", alpha=0.5) +
   geom_point(aes(color=as.numeric(Time))) +
   geom_path(arrow = arrow(length = unit(0.075, "inches"))) + 
@@ -424,7 +424,7 @@ rs_list <- v_obs_along_path(trajectory = traj_pca, # PCA plus Time column
                             v_pred = traj_v_pred) 
 
 
-
+ 
 rs_summary <- rs_list$Summary
 rs_boxplot <- rs_list$BoxplotData
 rs_boxplot$QueryPoint <- factor(rs_boxplot$QueryPoint, levels=as.character(seq(2,74,8)))

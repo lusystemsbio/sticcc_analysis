@@ -22,16 +22,22 @@ iNoise <- 0.1
 fc <- 50
 doTimeSeries <- F
 forceSTICCC <- F
+cbPalette <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7", "#999999")
 
 # directory setup
 topoDir <- file.path(getwd(),topoName)
 outputDir = file.path(topoDir,"data")
+plotDir <- file.path(getwd(), topoName, paste0(topoName, "_2024"))
 if(!dir.exists(topoDir)) {
   dir.create(topoDir)
 }
 if(!dir.exists(outputDir)) {
   dir.create(outputDir)
 }
+if(!dir.exists(plotDir)) {
+  dir.create(plotDir)
+}
+
 
 # load topology file
 topo <- loadTopo(topoName)
@@ -378,6 +384,114 @@ for(tpSet in seq_along(timepointSets)) {
 
 
 
+
+####### Basin vs signal strength ####### 
+
+basin_pos <- list()
+
+
+numTPsPerPhase <- simTime / printInterval / 4
+fcs_all <- c(seq(1,50, 50/numTPsPerPhase),rep(50,numTPsPerPhase), seq(50,1, -50/numTPsPerPhase), rep(1,numTPsPerPhase+15))
+tps_all <- unique(sort(tsData$Time))
+
+ds_factor <- 50
+
+fcs <- fcs_all[seq(1, length(fcs_all), ds_factor)]
+tps <- tps_all[seq(1, length(tps_all), ds_factor)]
+
+
+for(tp in tps) {
+  # Identify basin positions
+  pca_df <- tsData[which(tsData$Time == tp),c("PC1","PC2")]
+  kde_result <- kde2d(pca_df$PC1, pca_df$PC2, n = 100, lims=c(range(tsData$PC1), range(tsData$PC2)))
+  kde_density <- kde_result$z
+  energy_landscape <- -log(kde_density)
+  
+  # Identify local minima as basins
+  density_threshold <- 0.1
+  local_minima <- matrix(FALSE, nrow = nrow(energy_landscape), ncol = ncol(energy_landscape))
+  for (i in 2:(nrow(energy_landscape) - 1)) {
+    for (j in 2:(ncol(energy_landscape) - 1)) {
+      if (kde_density[i, j] > density_threshold &&
+          energy_landscape[i, j] == min(energy_landscape[(i-1):(i+1), (j-1):(j+1)])) {
+        local_minima[i, j] <- TRUE
+      }
+    }
+  }
+  
+  # Convert minima to PCA coordinates
+  minima_coords <- which(local_minima, arr.ind = TRUE)
+  minima_x <- kde_result$x[minima_coords[, 1]]
+  minima_y <- kde_result$y[minima_coords[, 2]]
+  
+  basin_pos[[as.character(tp)]] <- data.frame(PC1=minima_x, PC2=minima_y, Time=tp)
+}
+
+basin_pos_all <- do.call(rbind, basin_pos)
+
+
+ggplot() +
+  geom_point(data=pca$x, aes(x=-PC1,y=PC2),color="grey") +
+  geom_point(data=basin_pos_all[,], aes(x=-PC1,y=PC2, color=Time), alpha=0.9) +
+  theme_minimal() +
+  theme(axis.text = element_text(size=18),
+        axis.title = element_text(size=22),
+        axis.line = element_line(color="black", linewidth=0.5),
+        axis.ticks = element_line(color="black", linewidth=0.5))
+
+
+
+# Track movement of the original minimum
+distances <- numeric(length(tps) - 1)
+original_min <- basin_pos[["0"]][1, ]  # Take the first minimum from tp=0
+
+for (i in 2:length(tps)) {
+  tp <- as.character(tps[i])
+  current_minima <- basin_pos[[tp]]
+  
+  # Compute distances to original minimum
+  dists <- sqrt((current_minima$PC1 - original_min$PC1)^2 + (current_minima$PC1 - original_min$PC1)^2)
+  
+  # Store the minimum distance
+  distances[i - 1] <- min(dists)
+}
+
+# Store results in a dataframe
+distance_df <- data.frame(timepoint = tps[-1], distance = distances)
+distance_df <- rbind(data.frame(timepoint=0, distance=0), distance_df)
+distance_df$SignalFC <- fcs
+
+ggplot() +
+  geom_line(data=distance_df, aes(x=timepoint, y=distance)) +
+  xlab("Time") +
+  ylab("Distance from original basin") +
+  theme_minimal() +
+  theme(axis.text = element_text(size=18),
+        axis.title = element_text(size=22))
+
+
+# Compute scale factor based on data ranges
+scale_factor <- max(distance_df$distance, na.rm = TRUE) / max(distance_df$SignalFC, na.rm = TRUE)
+ggplot() +
+  # First y-axis: Distance
+  geom_line(data = distance_df, aes(x = timepoint, y = distance), color = "blue") +
+  # Second y-axis: fcs (scaled)
+  geom_line(data = distance_df, aes(x = timepoint, y = SignalFC * scale_factor), color = "red") +
+  xlab("Time") +
+  ylab("Distance from original basin") +
+  # Second y-axis label
+  scale_y_continuous(
+    sec.axis = sec_axis(~ . / scale_factor, name = "SignalFC")
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text = element_text(size = 18),
+    axis.title = element_text(size = 22)
+  )
+
+
+ggplot(distance_df) +
+  geom_point(aes(x=SignalFC, y=distance))
 
 
 
