@@ -245,7 +245,7 @@ dev.off()
 ### Plot net
 stic <- computeGridVectors(stic, inVectors = F, combine = T, unitVectors = F, how="net")
 
-plotGrid(sce = stic,
+image <- plotGrid(sce = stic,
          colorVar = NA,
          plotLoadings = F,
          plotSuffix = paste0("_jul24_net_grey"),
@@ -264,7 +264,7 @@ dev.off()
 ### Plot rev
 stic <- computeGridVectors(stic, inVectors = F, combine = T, unitVectors = F, how="rev")
 
-plotGrid(sce = stic,
+image <- plotGrid(sce = stic,
          colorVar = NA,
          plotLoadings = F,
          plotSuffix = paste0("_jul24_rev_grey"),
