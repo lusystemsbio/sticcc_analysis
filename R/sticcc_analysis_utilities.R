@@ -370,7 +370,7 @@ trajectorySmoothVectors <- function(trajectory, # trajectory in PCA coordinates
     
     
     v_smooth <- smoothVector(sce = sce,
-                             ptPCA,
+                             t(ptPCA),
                              neighborhoodRadius = neighborhoodRadius,
                              invertV2 = T)
     

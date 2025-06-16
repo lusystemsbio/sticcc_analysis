@@ -5,6 +5,7 @@ library(ggplot2)
 library(ComplexHeatmap)
 library(RColorBrewer)
 library(STICCC)
+library(MASS)
 set.seed(123)
 
 
@@ -103,7 +104,7 @@ if(!file.exists(stic_fname) | forceSTICCC) {
 } else {
   stic <- readRDS(stic_fname)
 }
-
+stic@metadata$params$plotDim <- "PCA"
 
 
 ##### IDENTIFY BASINS #####
@@ -130,13 +131,28 @@ minima_y <- kde_result$y[minima_coords[, 2]]
 
 # Plot KDE and basins
 kde_df <- data.frame(expand.grid(PC1 = kde_result$x, PC2 = kde_result$y), Density = as.vector(kde_density))
+pc1_weight <- round(stic@metadata$pca_summary$importance[2,1]*100,2)
+pc2_weight <- round(stic@metadata$pca_summary$importance[2,2]*100,2)
+plot_xlab <- paste("PC1 (",pc1_weight,"%)",sep="")
+plot_ylab <- paste("PC2 (",pc2_weight,"%)",sep="")
+xMin <- floor(min(pca_df[,1]))
+xMax <- ceiling(max(pca_df[,1]))
+yMin <- floor(min(pca_df[,2]))
+yMax <- ceiling(max(pca_df[,2]))
+
+
 
 image <- ggplot(kde_df, aes(x = PC1, y = PC2)) +
   geom_raster(aes(fill = Density)) +
   geom_contour(aes(z = Density), color = "black") +
   geom_point(data = data.frame(x = minima_x, y = minima_y), aes(x, y), color = "red", size = 3) +
   scale_fill_viridis_c() +
-  theme_minimal() 
+  xlab(plot_xlab) +
+  ylab(plot_ylab) +
+  xlim(xMin,xMax) +
+  ylim(yMin,yMax) +
+  theme_minimal() +
+  theme(axis.text = element_text(size=28), axis.title = element_text(size=36))
 
 density_basins_fname <- file.path(plotDir,paste0(topoName,"_kde2d_basins.pdf"))
 pdf(density_basins_fname, height = 10, width = 10)
@@ -152,12 +168,13 @@ ha_df <- data.frame(Cluster=as.character(colData(stic)$Cluster)[cluster_order])
 column_annotation <- HeatmapAnnotation(df = ha_df, 
                                        col=list(Cluster=c("1"=unname(cbPalette[1]),"2"=unname(cbPalette[2]),
                                                           "3"=unname(cbPalette[3]),"4"=unname(cbPalette[4]),
-                                                          "5"=unname(cbPalette[5]),"6"=unname(cbPalette[6]))))
+                                                          "5"=unname(cbPalette[5]),"6"=unname(cbPalette[6]))),
+                                       annotation_name_gp = gpar(fontsize=32))
 # Create the heatmap with annotation
 image <- Heatmap(exprMat_norm[,cluster_order], 
                  name = "Expression", 
                  top_annotation = column_annotation,
-                 row_names_gp=gpar(fontsize=16),
+                 row_names_gp=gpar(fontsize=32),
                  cluster_columns = F)
 
 wt_hmap_fname <- file.path(plotDir,paste0(topoName,"_expression_hmap.pdf"))
@@ -187,61 +204,83 @@ plotVectors(sce = stic,
 # Compute gridpoints
 stic <- computeGrid(stic, grid.length = 15)  
 
-
+# Prep minima data
+minima_df <- data.frame(PC1=minima_x, PC2=minima_y)
 
 ### Plot v1
 stic <- computeGridVectors(stic, inVectors = F, combine = F, unitVectors = F, how=NA)
 
-plotGrid(sce = stic,
+image <- plotGrid(sce = stic,
          colorVar = NA,
          plotLoadings = F,
          plotSuffix = paste0("_jul24_v1_grey"),
          minMagnitude = minMagnitude,
          scalingFactor = scalingFactor,
-         arrowheadSize = arrowheadSize
+         arrowheadSize = arrowheadSize,
+         return = T
 )
+image <- image + geom_point(data=minima_df, aes(x=PC1, y=PC2), color="red", size=7)
+
+pdf(file.path(plotDir,paste0("pca_grid_",topoName,"_v1_minima.pdf")), width = 10, height = 10)
+print(image)
+dev.off()
 
 
 # Plot v2
 stic <- computeGridVectors(stic, inVectors = T, combine = F, unitVectors = F, how=NA)
 
-plotGrid(sce = stic,
+image <- plotGrid(sce = stic,
          colorVar = NA,
          plotLoadings = F,
          plotSuffix = paste0("_jul24_v2_grey"),
          minMagnitude = minMagnitude,
          scalingFactor = scalingFactor,
-         arrowheadSize = arrowheadSize
+         arrowheadSize = arrowheadSize,
+         return = T
 )
+image <- image + geom_point(data=minima_df, aes(x=PC1, y=PC2), color="red", size=7)
 
+pdf(file.path(plotDir,paste0("pca_grid_",topoName,"_v2_minima.pdf")), width = 10, height = 10)
+print(image)
+dev.off()
 
 
 ### Plot net
 stic <- computeGridVectors(stic, inVectors = F, combine = T, unitVectors = F, how="net")
 
-plotGrid(sce = stic,
+image <- plotGrid(sce = stic,
          colorVar = NA,
          plotLoadings = F,
          plotSuffix = paste0("_jul24_net_grey"),
          minMagnitude = minMagnitude,
          scalingFactor = scalingFactor,
-         arrowheadSize = arrowheadSize
+         arrowheadSize = arrowheadSize,
+         return =T
 )
+image <- image + geom_point(data=minima_df, aes(x=PC1, y=PC2), color="red", size=7)
 
+pdf(file.path(plotDir,paste0("pca_grid_",topoName,"_net_minima.pdf")), width = 10, height = 10)
+print(image)
+dev.off()
 
 
 ### Plot rev
 stic <- computeGridVectors(stic, inVectors = F, combine = T, unitVectors = F, how="rev")
 
-plotGrid(sce = stic,
+image <- plotGrid(sce = stic,
          colorVar = NA,
          plotLoadings = F,
          plotSuffix = paste0("_jul24_rev_grey"),
          minMagnitude = minMagnitude,
          scalingFactor = scalingFactor,
-         arrowheadSize = arrowheadSize
+         arrowheadSize = arrowheadSize,
+         return = T
 )
+image <- image + geom_point(data=minima_df, aes(x=PC1, y=PC2), color="red", size=7)
 
+pdf(file.path(plotDir,paste0("pca_grid_",topoName,"_rev_minima.pdf")), width = 10, height = 10)
+print(image)
+dev.off()
 
 
 
@@ -249,15 +288,20 @@ plotGrid(sce = stic,
 ### Plot v1 again with loadings
 stic <- computeGridVectors(stic, inVectors = F, combine = F, unitVectors = F)
 
-plotGrid(sce = stic,
+image <- plotGrid(sce = stic,
          colorVar = NA,
          plotLoadings = T,
          plotSuffix = paste0("_jul24_v1_loadings_grey"),
          minMagnitude = minMagnitude,
          scalingFactor = scalingFactor,
-         arrowheadSize = arrowheadSize
+         arrowheadSize = arrowheadSize,
+         return = T
 )
+image <- image + geom_point(data=minima_df, aes(x=PC1, y=PC2), color="red", size=7)
 
+pdf(file.path(plotDir,paste0("pca_grid_",topoName,"_v1_minima_loadings.pdf")), width = 10, height = 10)
+print(image)
+dev.off()
 
 
 

@@ -4,6 +4,7 @@ library(sRACIPE)
 library(tidyr)
 library(ggplot2)
 library(STICCC)
+library(dplyr)
 
 # A |----| B
 # |        ^
@@ -225,6 +226,8 @@ if(!file.exists(stic_fname) | forceSTICCC) {
   saveRDS(stic, stic_fname)
 } else {
   stic <- readRDS(stic_fname)
+  stic@metadata$params$plotDim <-  "PCA"
+  stic@metadata$params$nDistPCs <- 3
 }
 
 
@@ -528,6 +531,8 @@ ggplot() +
 
 # Density plot with reversibility
 revScalingFactor <- 0.4
+plot_xlab <- paste("PC1 (80.42%)",sep="")
+plot_ylab <- paste("PC2 (13.15%)",sep="")
 image <- ggplot() +
   #geom_point(data=pca$x, aes(x=PC1, y=PC2)) +
   geom_density2d(data=traj_pca[vector_subset,], aes(x=PC1, y=PC2), color="red") +
@@ -535,6 +540,8 @@ image <- ggplot() +
   geom_segment(data = traj_v_pred_REV, 
                aes(x=x,y=y, xend=x+dx*revScalingFactor, yend=y+dy*revScalingFactor), 
                arrow = arrow(length = unit(0.3,"cm")), color="black", size=2, alpha=0.7) +
+  xlab(plot_xlab) +
+  ylab(plot_ylab) +
   scale_color_gradient(name="Query Point", breaks=c(10,30,50)) +
   theme_sticcc() +
   theme(axis.line = element_line(linewidth = 0.7, colour = "black"))
@@ -543,235 +550,6 @@ image <- ggplot() +
 pdf(file = file.path(plotDir, paste0("VObs_On_PCA.pdf")), width = 10, height = 10)
 print(image)
 dev.off()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-####### VALIDATION W/ OPTIMIZED LAG #######
-# Take a subset of points along the limit cycle
-subset_trajectory <- cycleDataPCA[seq(2,74,8),]
-rownames(subset_trajectory) <- seq(2,74,8)
-
-# Calculate vectors for each subsetted point
-traj_v_pred <- trajectorySmoothVectors(trajectory = subset_trajectory, # trajectory in PCA coordinates
-                                       sce = stic,
-                                       neighborhoodRadius = 0.05,
-                                       invertV2 = T,
-                                       vec.use = "net") 
-
-
-traj_v_pred_REV <- trajectorySmoothVectors(trajectory = subset_trajectory, # trajectory in PCA coordinates
-                                           sce = stic,
-                                           neighborhoodRadius = 0.05,
-                                           invertV2 = T,
-                                           vec.use = "rev") 
-
-## Identify lag for each point to keep variance constant
-var_traj_df <- data.frame()
-#optimize_lags <- seq(0.1, 3, 1)
-optimize_lags <- c(seq(0.1, 2.9, 0.1), seq(3, 20, 1))
-
-for(subsetPtIdx in rownames(subset_trajectory)) {
-  subsetPt <- subset_trajectory[subsetPtIdx,]
-  
-  ptVar <- vobs_var_by_t(trajectory = traj_pca,
-                         lags = optimize_lags,
-                         sce = stic,
-                         queryPoint = subsetPt,
-                         neighborhoodRadius = 0.02,
-                         plot=F, 
-                         save=F)
-  
-  ptVar$QueryPoint <- subsetPtIdx
-  var_traj_df <- rbind(var_traj_df, ptVar)
-  
-}
-
-var_traj_df$QueryPoint <- factor(var_traj_df$QueryPoint, levels=as.character(sort(as.numeric(rownames(subset_trajectory)))))
-
-# Look at variance over time
-ggplot(var_traj_df) +
-  geom_point(aes(x=Lag, y=Var, color=QueryPoint), size=3) +
-  geom_line(aes(x=Lag, y=Var, color=QueryPoint)) +
-  theme_sticcc()
-
-# RMSD between initial and final over time
-ggplot(var_traj_df) +
-  geom_point(aes(x=Lag, y=RMSD, color=QueryPoint), size=3) +
-  geom_line(aes(x=Lag, y=RMSD, color=QueryPoint)) +
-  theme_sticcc()
-
-
-
-
-
-
-# identify lags closest to a specified threshold RMSD
-#target_rmsd <- 0.2
-target_rmsd <- max(var_traj_df[which(var_traj_df$Lag == 0.1), "RMSD"])
-
-optimal_lags <- data.frame(QueryPoint = unique(var_traj_df$QueryPoint), OptimalLag = NA, Var = NA)
-for(pt in unique(var_traj_df$QueryPoint)) {
-  # Find lag where var is closest to target_var
-  pt_vars <- var_traj_df[which(var_traj_df$QueryPoint == pt & var_traj_df$Lag <= 10),]
-  pt_lag <- pt_vars[which.min(abs(pt_vars$RMSD - target_rmsd)), "Lag"]
-  pt_minVar <- pt_vars[which.min(abs(pt_vars$RMSD - target_rmsd)), "RMSD"]
-  
-  optimal_lags[which(optimal_lags$QueryPoint == pt), "OptimalLag"] <- pt_lag
-  optimal_lags[which(optimal_lags$QueryPoint == pt), "RMSD"] <- pt_minVar
-}
-
-#plot(optimal_lags$QueryPoint, optimal_lags$OptimalLag)
-
-#debug(v_obs_along_path)
-rs_list <- v_obs_along_path(trajectory = traj_pca, # PCA plus Time column
-                            lag = optimal_lags$OptimalLag, # numeric - time gap (computed numerically, so should correspond to times, not indices!)
-                            sce = stic,
-                            queryTrajectory = subset_trajectory, # either rownames of trajectory, or a dataframe of same ncol to be compared to it
-                            neighborhoodRadius = 0.03,
-                            v_pred = traj_v_pred) 
-
-
-
-rs_summary <- rs_list$Summary
-rs_boxplot <- rs_list$BoxplotData
-rs_boxplot$QueryPoint <- factor(rs_boxplot$QueryPoint, levels=as.character(seq(2,74,8)))
-
-
-
-# Scale angles and generate vectors
-vObs_scaling_factor <- 0.5
-rs_summary$Obs.Mag.1.Scaled <- rs_summary$Obs.Mag.1 / max(rs_summary$Obs.Mag.1) * vObs_scaling_factor
-rs_summary$Obs.Mag.2.Scaled <- rs_summary$Obs.Mag.2 / max(rs_summary$Obs.Mag.2) * vObs_scaling_factor
-
-rs_summary$Obs.Vector.X.1 <- cos(rs_summary$Obs.Angle.1) * rs_summary$Obs.Mag.1.Scaled
-rs_summary$Obs.Vector.Y.1 <- sin(rs_summary$Obs.Angle.1) * rs_summary$Obs.Mag.1.Scaled
-
-rs_summary$Obs.Vector.X.2 <- cos(rs_summary$Obs.Angle.2) * rs_summary$Obs.Mag.2.Scaled
-rs_summary$Obs.Vector.Y.2 <- sin(rs_summary$Obs.Angle.2) * rs_summary$Obs.Mag.2.Scaled
-
-
-# Using sampled ideal path, calculate a fwd and back angle for each point (exclude first and last)
-hline_df <- data.frame(QueryPoint=rs_summary$QueryPoint,
-                       Angle.Fwd = NA,
-                       Angle.Back = NA,
-                       Angle.NetFlow = NA,
-                       Angle.Rev = NA
-)
-for(i in 1:nrow(subset_trajectory)) {
-  angle_fwd <- NA
-  angle_back <- NA
-  
-  # Calculate angle to previous row
-  if(i > 1) {
-    diff_back <- subset_trajectory[i-1,c("PC1","PC2")] - subset_trajectory[i,c("PC1","PC2")]
-    angle_back <- angle_conversion(diff_back)
-    
-  }
-  # Angle to next row
-  if(i < nrow(subset_trajectory)) {
-    diff_fwd <- subset_trajectory[i+1,c("PC1","PC2")] - subset_trajectory[i,c("PC1","PC2")]
-    angle_fwd <- angle_conversion(diff_fwd)
-  }
-  
-  # Store output
-  hline_df[i,"Angle.Fwd"] <- angle_fwd
-  hline_df[i,"Angle.Back"] <- angle_back
-  hline_df[i,"Angle.NetFlow"] <- angle_conversion(traj_v_pred[i, c("dx","dy")]) 
-  hline_df[i,"Angle.Rev"] <- angle_conversion(traj_v_pred_REV[i, c("dx","dy")]) 
-  hline_df[i,"Angle.Rev.180"] <- angle_conversion(-1*traj_v_pred_REV[i, c("dx","dy")]) 
-  
-  
-}
-
-
-blue_segment_df <- data.frame(x=1, xend=9, y=hline_df$Angle.Fwd[1], yend=hline_df$Angle.Fwd[9])
-
-
-# Violin plot with annotations
-image <- ggplot(data=rs_boxplot) +
-  geom_violin(aes(x=QueryPoint, y=Angle)) +
-  #geom_point(data = hline_df, aes(x = QueryPoint, y = Angle.Fwd), color = "blue", size = 4, alpha=0.8) +
-  geom_segment(data = blue_segment_df, aes(x = x, xend = xend, y = y, yend=yend), color = "blue", size = 0.7, linetype="dashed", alpha=0.8) +
-  geom_point(data = hline_df, aes(x = QueryPoint, y = Angle.NetFlow), color = "purple", size = 4, alpha=0.8) +
-  labs(x = "Trajectory Point") +
-  theme_sticcc()
-image
-
-pdf(file = file.path(plotDir, paste0("Angle_Dists_Optimized_Lag_RMSD.pdf")), width = 10, height = 10)
-print(image)
-dev.off()
-
-
-#library(tidyverse)
-library(viridisLite)
-
-mywidth <- .45 # bit of trial and error
-p <- ggplot(rs_boxplot) + geom_violin(aes(x=QueryPoint,y=Angle))
-
-# all you need for the gradient fill
-vl_fill <- data.frame(ggplot_build(p)$data) %>%
-  mutate(xnew = x - mywidth * violinwidth, xend = x + mywidth * violinwidth)
-
-breaks <- unique(as.integer(rs_boxplot$QueryPoint))
-labels <- unique(rs_boxplot$QueryPoint)
-
-image <- ggplot() +
-  geom_segment(data = vl_fill, aes(x = xnew, xend = xend, y = y, yend = y,
-                                   color = violinwidth), show.legend = FALSE) +
-  # Re-use geom_violin to plot the outline
-  geom_violin(data = rs_boxplot, aes(x = as.integer(QueryPoint), y = Angle, fill = QueryPoint),
-              color = "white", alpha = 0, draw_quantiles = c(0.25, 0.5, 0.75),
-              show.legend = FALSE) +
-  scale_x_continuous(breaks = breaks, labels = labels) +
-  scale_color_viridis_c() +
-  geom_segment(data = blue_segment_df, aes(x = x, xend = xend, y = y, yend=yend), color = "blue", size = 0.7, linetype="dashed", alpha=0.8) +
-  geom_point(data = hline_df, aes(x = 1:10, y = Angle.NetFlow), color = "purple", size = 4, alpha=0.8) +
-  theme_sticcc() +
-  labs(x = "Trajectory Point", y = "Angle")
-image
-
-pdf(file = file.path(plotDir, paste0("Angle_Dists_Optimized_Lag_RMSD_gradientFill.pdf")), width = 10, height = 10)
-print(image)
-dev.off()
-
-
-
-# Density plot with reversibility
-revScalingFactor <- 0.1
-image <- ggplot() +
-  #geom_point(data=pca$x, aes(x=PC1, y=PC2)) +
-  geom_density2d(data=traj_pca[vector_subset,], aes(x=PC1, y=PC2), color="red") +
-  geom_point(data=cycleDataPCA, aes(x=PC1, y=PC2, color=1:nrow(cycleDataPCA))) +
-  geom_segment(data = traj_v_pred, 
-               aes(x=x,y=y, xend=x+dx*revScalingFactor, yend=y+dy*revScalingFactor), 
-               arrow = arrow(length = unit(0.3,"cm")), color="black", size=2, alpha=0.7) +
-  scale_color_gradient(name="Point No.", breaks=c(20,40,60)) +
-  theme_sticcc() +
-  theme(axis.line = element_line(linewidth = 0.7, colour = "black"))
-
-
-pdf(file = file.path(plotDir, paste0("VObs_On_PCA.pdf")), width = 10, height = 10)
-print(image)
-dev.off()
-
 
 
 # Example plot of init and final states
@@ -785,7 +563,240 @@ image <- plot_v_vs_trajectory(sce = stic,
                               lag = 0.6,
                               v_pred = traj_v_pred_REV[4,], 
                               scale_factor = 1)
-image
+image + 
+  theme_sticcc() + 
+  theme(axis.line = element_line(linewidth = 0.7, colour = "black")) + 
+  xlab(plot_xlab) +
+  ylab(plot_ylab)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+### Below code not used for CTS 
+# # Take a subset of points along the limit cycle
+# subset_trajectory <- cycleDataPCA[seq(2,74,8),]
+# rownames(subset_trajectory) <- seq(2,74,8)
+# 
+# # Calculate vectors for each subsetted point
+# traj_v_pred <- trajectorySmoothVectors(trajectory = subset_trajectory, # trajectory in PCA coordinates
+#                                        sce = stic,
+#                                        neighborhoodRadius = 0.05,
+#                                        invertV2 = T,
+#                                        vec.use = "net") 
+# 
+# 
+# traj_v_pred_REV <- trajectorySmoothVectors(trajectory = subset_trajectory, # trajectory in PCA coordinates
+#                                            sce = stic,
+#                                            neighborhoodRadius = 0.05,
+#                                            invertV2 = T,
+#                                            vec.use = "rev") 
+# 
+# ## Identify lag for each point to keep variance constant
+# var_traj_df <- data.frame()
+# #optimize_lags <- seq(0.1, 3, 1)
+# optimize_lags <- c(seq(0.1, 2.9, 0.1), seq(3, 20, 1))
+# 
+# for(subsetPtIdx in rownames(subset_trajectory)) {
+#   subsetPt <- subset_trajectory[subsetPtIdx,]
+#   
+#   ptVar <- vobs_var_by_t(trajectory = traj_pca,
+#                          lags = optimize_lags,
+#                          sce = stic,
+#                          queryPoint = subsetPt,
+#                          neighborhoodRadius = 0.02,
+#                          plot=F, 
+#                          save=F)
+#   
+#   ptVar$QueryPoint <- subsetPtIdx
+#   var_traj_df <- rbind(var_traj_df, ptVar)
+#   
+# }
+# 
+# var_traj_df$QueryPoint <- factor(var_traj_df$QueryPoint, levels=as.character(sort(as.numeric(rownames(subset_trajectory)))))
+# 
+# # Look at variance over time
+# ggplot(var_traj_df) +
+#   geom_point(aes(x=Lag, y=Var, color=QueryPoint), size=3) +
+#   geom_line(aes(x=Lag, y=Var, color=QueryPoint)) +
+#   theme_sticcc()
+# 
+# # RMSD between initial and final over time
+# ggplot(var_traj_df) +
+#   geom_point(aes(x=Lag, y=RMSD, color=QueryPoint), size=3) +
+#   geom_line(aes(x=Lag, y=RMSD, color=QueryPoint)) +
+#   theme_sticcc()
+# 
+# 
+# 
+# 
+# 
+# 
+# # identify lags closest to a specified threshold RMSD
+# #target_rmsd <- 0.2
+# target_rmsd <- max(var_traj_df[which(var_traj_df$Lag == 0.1), "RMSD"])
+# 
+# optimal_lags <- data.frame(QueryPoint = unique(var_traj_df$QueryPoint), OptimalLag = NA, Var = NA)
+# for(pt in unique(var_traj_df$QueryPoint)) {
+#   # Find lag where var is closest to target_var
+#   pt_vars <- var_traj_df[which(var_traj_df$QueryPoint == pt & var_traj_df$Lag <= 10),]
+#   pt_lag <- pt_vars[which.min(abs(pt_vars$RMSD - target_rmsd)), "Lag"]
+#   pt_minVar <- pt_vars[which.min(abs(pt_vars$RMSD - target_rmsd)), "RMSD"]
+#   
+#   optimal_lags[which(optimal_lags$QueryPoint == pt), "OptimalLag"] <- pt_lag
+#   optimal_lags[which(optimal_lags$QueryPoint == pt), "RMSD"] <- pt_minVar
+# }
+# 
+# #plot(optimal_lags$QueryPoint, optimal_lags$OptimalLag)
+# 
+# #debug(v_obs_along_path)
+# rs_list <- v_obs_along_path(trajectory = traj_pca, # PCA plus Time column
+#                             lag = optimal_lags$OptimalLag, # numeric - time gap (computed numerically, so should correspond to times, not indices!)
+#                             sce = stic,
+#                             queryTrajectory = subset_trajectory, # either rownames of trajectory, or a dataframe of same ncol to be compared to it
+#                             neighborhoodRadius = 0.03,
+#                             v_pred = traj_v_pred) 
+# 
+# 
+# 
+# rs_summary <- rs_list$Summary
+# rs_boxplot <- rs_list$BoxplotData
+# rs_boxplot$QueryPoint <- factor(rs_boxplot$QueryPoint, levels=as.character(seq(2,74,8)))
+# 
+# 
+# 
+# # Scale angles and generate vectors
+# vObs_scaling_factor <- 0.5
+# rs_summary$Obs.Mag.1.Scaled <- rs_summary$Obs.Mag.1 / max(rs_summary$Obs.Mag.1) * vObs_scaling_factor
+# rs_summary$Obs.Mag.2.Scaled <- rs_summary$Obs.Mag.2 / max(rs_summary$Obs.Mag.2) * vObs_scaling_factor
+# 
+# rs_summary$Obs.Vector.X.1 <- cos(rs_summary$Obs.Angle.1) * rs_summary$Obs.Mag.1.Scaled
+# rs_summary$Obs.Vector.Y.1 <- sin(rs_summary$Obs.Angle.1) * rs_summary$Obs.Mag.1.Scaled
+# 
+# rs_summary$Obs.Vector.X.2 <- cos(rs_summary$Obs.Angle.2) * rs_summary$Obs.Mag.2.Scaled
+# rs_summary$Obs.Vector.Y.2 <- sin(rs_summary$Obs.Angle.2) * rs_summary$Obs.Mag.2.Scaled
+# 
+# 
+# # Using sampled ideal path, calculate a fwd and back angle for each point (exclude first and last)
+# hline_df <- data.frame(QueryPoint=rs_summary$QueryPoint,
+#                        Angle.Fwd = NA,
+#                        Angle.Back = NA,
+#                        Angle.NetFlow = NA,
+#                        Angle.Rev = NA
+# )
+# for(i in 1:nrow(subset_trajectory)) {
+#   angle_fwd <- NA
+#   angle_back <- NA
+#   
+#   # Calculate angle to previous row
+#   if(i > 1) {
+#     diff_back <- subset_trajectory[i-1,c("PC1","PC2")] - subset_trajectory[i,c("PC1","PC2")]
+#     angle_back <- angle_conversion(diff_back)
+#     
+#   }
+#   # Angle to next row
+#   if(i < nrow(subset_trajectory)) {
+#     diff_fwd <- subset_trajectory[i+1,c("PC1","PC2")] - subset_trajectory[i,c("PC1","PC2")]
+#     angle_fwd <- angle_conversion(diff_fwd)
+#   }
+#   
+#   # Store output
+#   hline_df[i,"Angle.Fwd"] <- angle_fwd
+#   hline_df[i,"Angle.Back"] <- angle_back
+#   hline_df[i,"Angle.NetFlow"] <- angle_conversion(traj_v_pred[i, c("dx","dy")]) 
+#   hline_df[i,"Angle.Rev"] <- angle_conversion(traj_v_pred_REV[i, c("dx","dy")]) 
+#   hline_df[i,"Angle.Rev.180"] <- angle_conversion(-1*traj_v_pred_REV[i, c("dx","dy")]) 
+#   
+#   
+# }
+# 
+# 
+# blue_segment_df <- data.frame(x=1, xend=9, y=hline_df$Angle.Fwd[1], yend=hline_df$Angle.Fwd[9])
+# 
+# 
+# # Violin plot with annotations
+# image <- ggplot(data=rs_boxplot) +
+#   geom_violin(aes(x=QueryPoint, y=Angle)) +
+#   #geom_point(data = hline_df, aes(x = QueryPoint, y = Angle.Fwd), color = "blue", size = 4, alpha=0.8) +
+#   geom_segment(data = blue_segment_df, aes(x = x, xend = xend, y = y, yend=yend), color = "blue", size = 0.7, linetype="dashed", alpha=0.8) +
+#   geom_point(data = hline_df, aes(x = QueryPoint, y = Angle.NetFlow), color = "purple", size = 4, alpha=0.8) +
+#   labs(x = "Trajectory Point") +
+#   theme_sticcc()
+# image
+# 
+# pdf(file = file.path(plotDir, paste0("Angle_Dists_Optimized_Lag_RMSD.pdf")), width = 10, height = 10)
+# print(image)
+# dev.off()
+# 
+# 
+# #library(tidyverse)
+# library(viridisLite)
+# 
+# mywidth <- .45 # bit of trial and error
+# p <- ggplot(rs_boxplot) + geom_violin(aes(x=QueryPoint,y=Angle))
+# 
+# # all you need for the gradient fill
+# vl_fill <- data.frame(ggplot_build(p)$data) %>%
+#   mutate(xnew = x - mywidth * violinwidth, xend = x + mywidth * violinwidth)
+# 
+# breaks <- unique(as.integer(rs_boxplot$QueryPoint))
+# labels <- unique(rs_boxplot$QueryPoint)
+# 
+# image <- ggplot() +
+#   geom_segment(data = vl_fill, aes(x = xnew, xend = xend, y = y, yend = y,
+#                                    color = violinwidth), show.legend = FALSE) +
+#   # Re-use geom_violin to plot the outline
+#   geom_violin(data = rs_boxplot, aes(x = as.integer(QueryPoint), y = Angle, fill = QueryPoint),
+#               color = "white", alpha = 0, draw_quantiles = c(0.25, 0.5, 0.75),
+#               show.legend = FALSE) +
+#   scale_x_continuous(breaks = breaks, labels = labels) +
+#   scale_color_viridis_c() +
+#   geom_segment(data = blue_segment_df, aes(x = x, xend = xend, y = y, yend=yend), color = "blue", size = 0.7, linetype="dashed", alpha=0.8) +
+#   geom_point(data = hline_df, aes(x = 1:10, y = Angle.NetFlow), color = "purple", size = 4, alpha=0.8) +
+#   theme_sticcc() +
+#   labs(x = "Trajectory Point", y = "Angle")
+# image
+# 
+# pdf(file = file.path(plotDir, paste0("Angle_Dists_Optimized_Lag_RMSD_gradientFill.pdf")), width = 10, height = 10)
+# print(image)
+# dev.off()
+# 
+# 
+# 
+# # Density plot with reversibility
+# revScalingFactor <- 0.1
+# image <- ggplot() +
+#   #geom_point(data=pca$x, aes(x=PC1, y=PC2)) +
+#   geom_density2d(data=traj_pca[vector_subset,], aes(x=PC1, y=PC2), color="red") +
+#   geom_point(data=cycleDataPCA, aes(x=PC1, y=PC2, color=1:nrow(cycleDataPCA))) +
+#   geom_segment(data = traj_v_pred, 
+#                aes(x=x,y=y, xend=x+dx*revScalingFactor, yend=y+dy*revScalingFactor), 
+#                arrow = arrow(length = unit(0.3,"cm")), color="black", size=2, alpha=0.7) +
+#   scale_color_gradient(name="Point No.", breaks=c(20,40,60)) +
+#   theme_sticcc() +
+#   theme(axis.line = element_line(linewidth = 0.7, colour = "black"))
+# 
+# 
+# pdf(file = file.path(plotDir, paste0("VObs_On_PCA.pdf")), width = 10, height = 10)
+# print(image)
+# dev.off()
+# 
+# 
+
 
 
 

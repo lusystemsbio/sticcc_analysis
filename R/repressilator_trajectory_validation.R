@@ -5,6 +5,7 @@ library(tidyr)
 library(ggplot2)
 library(patchwork)
 library(STICCC)
+library(dplyr)
 
 
 # Global parameters
@@ -210,6 +211,8 @@ if(!file.exists(stic_fname) | forceSTICCC) {
   saveRDS(stic, stic_fname)
 } else {
   stic <- readRDS(stic_fname)
+  stic@metadata$params$plotDim <-  "PCA"
+  stic@metadata$params$nDistPCs <- 3
 }
 
 
@@ -273,7 +276,7 @@ v_df <- data.frame(Time=cycleTs,
 
 for(t in seq_along(cycleTs)) {
   v_smooth <- smoothVector(sce = stic,
-                           queryPoint = cycleDataPCA[t,],
+                           queryPoint = t(cycleDataPCA[t,]),
                            neighborhoodRadius = 0.1,
                            invertV2 = T)
   if(!is.null(v_smooth)) {
@@ -529,8 +532,10 @@ dev.off()
 
 
 
-# Density plot with reversibility
+# Density plot with vectors
 revScalingFactor <- 0.1
+plot_xlab <- paste("PC1 (43.92%)",sep="")
+plot_ylab <- paste("PC2 (43.06%)",sep="")
 image <- ggplot() +
   #geom_point(data=pca$x, aes(x=PC1, y=PC2)) +
   geom_density2d(data=traj_pca[vector_subset,], aes(x=PC1, y=PC2), color="red") +
@@ -538,6 +543,8 @@ image <- ggplot() +
   geom_segment(data = traj_v_pred, 
                aes(x=x,y=y, xend=x+dx*revScalingFactor, yend=y+dy*revScalingFactor), 
                arrow = arrow(length = unit(0.3,"cm")), color="black", size=2, alpha=0.7) +
+  xlab(plot_xlab) +
+  ylab(plot_ylab) +
   scale_color_gradient(name="Point No.", breaks=c(20,40,60)) +
   theme_sticcc() +
   theme(axis.line = element_line(linewidth = 0.7, colour = "black"))
