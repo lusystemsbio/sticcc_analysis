@@ -201,7 +201,10 @@ v_obs_along_path <- function(trajectory, # PCA plus Time column
                                Idx=init_idx_padded,
                                Angle=angles
     )
-    
+    for(i in 1:(ncol(v_obs) - 1)) {
+      boxplot_data[,paste0("dPC",i)] <- v_obs[,i]
+      
+    }
     
     
     summary_data[which(summary_data$QueryPoint == rownames(querySet)[i]),"Pred.Angle"] <- angle_conversion(v_pred[i,])

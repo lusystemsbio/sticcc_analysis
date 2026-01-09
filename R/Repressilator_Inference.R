@@ -226,7 +226,7 @@ dev.off()
 # Plot v2
 stic <- computeGridVectors(stic, inVectors = T, combine = F, unitVectors = F, how=NA)
 
-plotGrid(sce = stic,
+image <- plotGrid(sce = stic,
          colorVar = NA,
          plotLoadings = F,
          plotSuffix = paste0("_jul24_v2_grey"),

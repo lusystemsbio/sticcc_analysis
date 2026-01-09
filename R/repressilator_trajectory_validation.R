@@ -501,23 +501,104 @@ dev.off()
 #library(tidyverse)
 library(viridisLite)
 
-mywidth <- .45 # bit of trial and error
-p <- ggplot(rs_boxplot) + geom_violin(aes(x=QueryPoint,y=Angle))
+mywidth <- .4 # bit of trial and error
+#p <- ggplot(rs_boxplot) + geom_violin(aes(x=QueryPoint,y=Angle))
 
-# all you need for the gradient fill
-vl_fill <- data.frame(ggplot_build(p)$data) %>%
-  mutate(xnew = x - mywidth * violinwidth, xend = x + mywidth * violinwidth)
+# gradient fill
+#vl_fill <- data.frame(ggplot_build(p)$data) %>%
+#  mutate(xnew = x - mywidth * violinwidth, xend = x + mywidth * violinwidth)
+vl_fill_circ <- list()
+
+query_levels <- sort(unique(rs_boxplot$QueryPoint))
+
+for (i in seq_along(query_levels)) {
+  qp <- query_levels[i]
+  dsub <- subset(rs_boxplot, QueryPoint == qp)
+  
+  # circular KDE on [-pi, pi]
+  th <- circular(dsub$Angle, units = "radians", modulo = "2pi")
+  dens <- density.circular(th, kernel = "vonmises", bw=4, n = 512)
+  
+  
+  y  <- as.numeric(dens$x)
+  y[y > pi] <- y[y > pi] - 2*pi       # wrap if necessary
+  d  <- as.numeric(dens$y)
+  d  <- d / max(d)                    # normalize like violinwidth
+  
+  x     <- as.integer(i)
+  xnew  <- x - mywidth * d
+  xend  <- x + mywidth * d
+  
+  vl_fill_circ[[i]] <- tibble(
+    QueryPoint = qp,
+    x = x,
+    y = y,
+    violinwidth = d,
+    xnew = xnew,
+    xend = xend
+  )
+}
+
+vl_fill_circ <- do.call(rbind, vl_fill_circ)
+
+
+
+
+# Left and right “sides” of the violin, then stitch into a closed polygon per group
+outline_list <- list()
+ql <- sort(unique(vl_fill_circ$QueryPoint))
+
+for (i in seq_along(ql)) {
+  qp <- ql[i]
+  d  <- vl_fill_circ[vl_fill_circ$QueryPoint == qp, c("y","xnew","xend")]
+  o  <- order(d$y)                 # ensure monotonic y (angle)
+  
+  # left and right edges, then stitch into a closed polygon
+  x_poly <- c(d$xnew[o], rev(d$xend[o]))
+  y_poly <- c(d$y[o],    rev(d$y[o]))
+  
+  outline_list[[i]] <- data.frame(
+    QueryPoint = qp,
+    x_poly = x_poly,
+    y_poly = y_poly
+  )
+}
+
+outline_df <- do.call(rbind, outline_list)
+
+
+
+quant_df <- rs_boxplot |>
+  dplyr::group_by(QueryPoint) |>
+  dplyr::reframe({
+    th <- circular(Angle, type = "angles", units = "radians",
+                   template = "none", modulo = "2pi")
+    qs <- as.numeric(quantile.circular(th, probs = c(0.25, 0.5, 0.75)))
+    qs[qs > pi] <- qs[qs > pi] - 2*pi       # wrap if necessary
+    tibble::tibble(
+      Quant = c("Q1","Q2","Q3"),
+      Angle = qs,
+      x     = as.integer(dplyr::first(QueryPoint))  # scalar!
+    )
+  }) |>
+  dplyr::mutate(
+    xnew = x - mywidth,
+    xend = x + mywidth
+  )
+
 
 breaks <- unique(as.integer(rs_boxplot$QueryPoint))
 labels <- unique(rs_boxplot$QueryPoint)
 
 image <- ggplot() +
-  geom_segment(data = vl_fill, aes(x = xnew, xend = xend, y = y, yend = y,
+  geom_segment(data = vl_fill_circ, aes(x = xnew, xend = xend, y = y, yend = y,
                                    color = violinwidth), show.legend = FALSE) +
-  # Re-use geom_violin to plot the outline
-  geom_violin(data = rs_boxplot, aes(x = as.integer(QueryPoint), y = Angle, fill = QueryPoint),
-              color = "white", alpha = 0, draw_quantiles = c(0.25, 0.5, 0.75),
-              show.legend = FALSE) +
+  geom_polygon(data = outline_df,
+               aes(x = x_poly, y = y_poly, group = QueryPoint, fill = factor(QueryPoint)),
+               color = "white", fill = NA, linewidth = 0.6, show.legend = FALSE) +
+  geom_segment(data = quant_df,
+               aes(x = xnew, xend = xend, y = Angle, yend = Angle),
+               color = "white", linewidth = 0.6, alpha = 0.9, inherit.aes = FALSE) +
   scale_x_continuous(breaks = breaks, labels = labels) +
   scale_color_viridis_c() +
   geom_segment(data = blue_segment_df, aes(x = x, xend = xend, y = y, yend=yend), color = "blue", size = 0.7, linetype="dashed", alpha=0.8) +
