@@ -16,5 +16,5 @@ The scripts contain the following content:
 * Repressilator_downsample.R: effect of dataset size on STICCC predictions
 * sticcc_analysis_utilities.R: helper functions for some analysis and visualization of STICCC results beyond what the package includes
 
-For additional information, contact the authors or see the original paper: https://www.biorxiv.org/content/10.1101/2024.08.30.610498v1
+For additional information, contact the authors or see the original paper: Ramirez D, Lu M. Dissecting reversible and irreversible single cell state transitions from gene regulatory networks. Mol Syst Biol. 2026. doi:10.1038/s44320-026-00196-8.
 
