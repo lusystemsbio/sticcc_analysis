@@ -217,7 +217,7 @@ timePoints <- round(timePoints, 2)
 dsNum <- numModels
 
 
-## VICCC in transition
+## STICCC in transition
 if(useIC) {
   
   processDataIC <- function(racipe,models,pca,tmpMeans,tmpSds) {

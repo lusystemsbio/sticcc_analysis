@@ -9,7 +9,7 @@ library(tidyr)
 library(tibble)
 library(FNN)  # For k-nearest neighbors
 #library(remotes)
-#remotes::install_github("lusystemsbio/viccc")
+#remotes::install_github("lusystemsbio/sticcc")
 library(STICCC)
 set.seed(123)
 source("R/sticcc_analysis_utilities.R")
